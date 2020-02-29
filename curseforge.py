@@ -1,6 +1,8 @@
 import requests
 import json
 from typing import Tuple, List
+import os
+import shutil
 
 TWITCH_HEADERS = {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -33,12 +35,21 @@ class AddonFile:
         self.date = data['fileDate']
         self.size = data['fileLength']
         self.url = data['downloadUrl']
+        self.game_version = data['gameVersion']
 
     def __str__(self):
         return self.name
 
     def __repr__(self):
         return f'AddonFile({self.name!r})'
+
+    def download(self, path: str='') -> str:
+        path = os.path.join(path, self.filename)
+        with requests.get(self.url, headers=TWITCH_HEADERS, stream=True) as r:
+            r.raise_for_status()
+            with open(path, 'wb') as file:
+                shutil.copyfileobj(r.raw, file)
+        return path
 
 class Addon:
     def __init__(self, data: dict):
@@ -63,15 +74,14 @@ class Addon:
 
     def get_files(self) -> Tuple[AddonFile]:
         """
-        Returns a tuple with all the files in the `adddon/{id}/files` api with the order newest to oldest
+        Returns a tuple with all the files in the `adddon/{id}/files` api
         """
         r = requests.get(f'https://addons-ecs.forgesvc.net/api/v2/addon/{self.id}/files', headers=TWITCH_HEADERS)
         data = json.loads(r.text)
-        # oh god double tuple
-        return tuple(AddonFile(i) for i in data[::-1])
+        return tuple(AddonFile(i) for i in data)
     
     @staticmethod
-    def search_addon(name: str, entries: int=10):
+    def search_addon(name: str, entries: int=10) -> Tuple['Addon']:
         """
         Searchs for an addon and returns a tuple of the addons found
         """
