@@ -15,13 +15,24 @@ def save_data():
     with open(os.path.join(folder, 'obsidian.json'), 'w') as file:
         json.dump(data, file)
 
+_button_disabled = False
+def button_disable_color(condition: bool=True):
+    global _button_disabled
+    if condition:
+        if _button_disabled:
+            imgui.pop_style_color(3)
+        else:
+            imgui.push_style_color(imgui.COLOR_BUTTON, 0.3, 0.3, 0.3)
+            imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, 0.3, 0.3, 0.3)
+            imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, 0.3, 0.3, 0.3)
+        _button_disabled = not _button_disabled
+
 selected_mod = None
 selected_mod_files = []
 selected_mod_file = 0
 
 def edit_mod_get_versions():
-    global selected_mod_files
-    global selected_mod_file
+    global selected_mod_files, selected_mod_file
     
     project_id = data['mods'][selected_mod]['id']
     file_id = data['mods'][selected_mod]['file_id']
@@ -55,6 +66,18 @@ def download_selected_mod_version():
     save_data()
     download_state = 2
 
+search_str = None
+search_state = 0 # same as download_state
+search_results = []
+search_selected = 0
+def search_for_mod():
+    global search_state, search_results, search_selected
+    search_state = 1
+    search_results = []
+    search_results = Addon.search_addon(search_str)
+    search_selected = 0
+    search_state = 0
+
 while helper.loop():
     with helper:
         if imgui.begin_main_menu_bar():
@@ -68,9 +91,9 @@ while helper.loop():
         if data is not None:
             if imgui.begin('Main', flags=imgui.WINDOW_MENU_BAR | imgui.WINDOW_NO_TITLE_BAR):
                 if imgui.begin_menu_bar():
-                    if imgui.begin_menu('Actions'):
-                        if imgui.menu_item('Search for mods')[0]:
-                            'yea'
+                    if imgui.begin_menu('Add mod'):
+                        if imgui.menu_item('Search')[0]:
+                            search_str = ''
                         imgui.end_menu()
                     imgui.end_menu_bar()
                 for i, mod in enumerate(data['mods']):
@@ -81,6 +104,7 @@ while helper.loop():
                         selected_mod = i
                         selected_mod_files = []
                         selected_mod_file = 0
+            # Edit mod window
             if selected_mod is not None:
                 current = data['mods'][selected_mod]
                 _, opened = imgui.begin('Edit mod', closable=True)
@@ -106,9 +130,7 @@ while helper.loop():
                         imgui.text(f'and replace it with the version you just selected ({selected_mod_files[selected_mod_file].name})')
                         imgui.separator()
                         disable = download_state != 0
-                        if disable:
-                            imgui.push_style_color(imgui.COLOR_BUTTON, 0.3, 0.3, 0.3)
-                            imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, 0.3, 0.3, 0.3)
+                        button_disable_color(disable)
                         if imgui.button('OK', width=imgui.get_content_region_available_width() / 2 - imgui.STYLE_FRAME_PADDING) and not disable:
                             t = threading.Thread(target=download_selected_mod_version)
                             t.start()
@@ -116,7 +138,7 @@ while helper.loop():
                         imgui.same_line()
                         if imgui.button('Cancel', width=imgui.get_content_region_available_width()) and not disable:
                             imgui.close_current_popup()
-                        if disable: imgui.pop_style_color(2)
+                        button_disable_color(disable)
                         imgui.end_popup()
                     imgui.same_line()
                     
@@ -130,4 +152,22 @@ while helper.loop():
                     selected_mod_file = 0
                 imgui.end()
             imgui.end()
+        # Search mod window
+        if search_str is not None:
+            if imgui.begin('Search'):
+                _, search_str = imgui.input_text('', search_str, 256)
+                imgui.same_line()
+                disable = search_state == 1
+                button_disable_color(disable)
+                if imgui.button('Search') and not disable:
+                    t = threading.Thread(target=search_for_mod)
+                    t.start()
+                button_disable_color(disable)
+                if imgui.begin_child('search_results', border=True) and len(search_results):
+                    for i, result in enumerate(search_results):
+                        if imgui.selectable(f'{result.name}\n{result.summary}'):
+                            'yea'
+                imgui.end_child()
+            imgui.end()
+
 helper.stop()
