@@ -31,7 +31,7 @@ class AddonFile:
         self.data = data
         self.id = data['id']
         self.name = data['displayName']
-        self.filename = data['fileName']
+        self.file_name = data['fileName']
         self.date = data['fileDate']
         self.size = data['fileLength']
         self.url = data['downloadUrl']
@@ -44,7 +44,7 @@ class AddonFile:
         return f'AddonFile({self.name!r})'
 
     def download(self, path: str='') -> str:
-        path = os.path.join(path, self.filename)
+        path = os.path.join(path, self.file_name)
         with requests.get(self.url, headers=TWITCH_HEADERS, stream=True) as r:
             r.raise_for_status()
             with open(path, 'wb') as file:
