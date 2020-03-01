@@ -69,14 +69,47 @@ def download_selected_mod_version():
 search_str = None
 search_state = 0 # same as download_state
 search_results = []
-search_selected = 0
+search_selected = None
+search_versions = []
+search_version_selected = 0
 def search_for_mod():
     global search_state, search_results, search_selected
     search_state = 1
     search_results = []
     search_results = Addon.search_addon(search_str)
-    search_selected = 0
+    search_selected = None
     search_state = 0
+
+search_versions_state = 0
+def search_get_versions():
+    global search_versions, search_versions_state
+    search_versions_state = 1
+
+    addon = search_results[search_selected]
+    search_versions = tuple(reversed(sorted(addon.get_files(), key=lambda af: date_parse(af.date))))
+    
+    search_versions_state = 0
+
+def download_search_mod_version():
+    global download_state
+    download_state = 1
+    mod = search_results[search_selected]
+    
+    af: AddonFile = search_versions[search_version_selected]
+    af.download(folder)
+    
+    data['mods'].append({
+        'name': mod.name,
+        'id': mod.id,
+        'url': mod.url,
+        'version_name': af.name,
+        'file_name': af.file_name,
+        'file_id': af.id,
+        'icon': mod.picture,
+        'summary': mod.summary
+    })
+    save_data()
+    download_state = 2
 
 while helper.loop():
     with helper:
@@ -116,7 +149,7 @@ while helper.loop():
                         t.start()
 
 
-                    imgui.set_cursor_pos((0, imgui.get_window_height() - 30))
+                    imgui.set_cursor_pos((0, imgui.get_window_height() - 32))
                     imgui.separator()
 
                     if imgui.button('OK') and len(selected_mod_files):
@@ -154,7 +187,8 @@ while helper.loop():
             imgui.end()
         # Search mod window
         if search_str is not None:
-            if imgui.begin('Search'):
+            _, opened = imgui.begin('Search', closable=True)
+            if opened:
                 _, search_str = imgui.input_text('', search_str, 256)
                 imgui.same_line()
                 disable = search_state == 1
@@ -165,9 +199,49 @@ while helper.loop():
                 button_disable_color(disable)
                 if imgui.begin_child('search_results', border=True) and len(search_results):
                     for i, result in enumerate(search_results):
-                        if imgui.selectable(f'{result.name}\n{result.summary}'):
-                            'yea'
+                        if imgui.selectable(f'{result.name}\n{result.summary}')[0]:
+                            imgui.set_next_window_focus()
+                            search_selected = i
+                            search_versions = []
+                            search_version_selected = 0
                 imgui.end_child()
+            else:
+                search_str = None
+                search_results = []
+                search_selected = None
+            imgui.end()
+        # search mod specific window
+        if search_selected is not None:
+            _, opened = imgui.begin('Add mod', closable=True)
+            if opened:
+                _, search_version_selected = imgui.combo('Select version', search_version_selected, [af.name for af in search_versions])
+                disable = search_versions_state == 1
+                button_disable_color(disable)
+                if imgui.button('Get versions') and not disable:
+                    t = threading.Thread(target=search_get_versions)
+                    t.start()
+                button_disable_color(disable)
+
+                imgui.set_cursor_pos((0, imgui.get_window_height() - 32))
+                imgui.separator()
+
+                if imgui.button('Add'):
+                    imgui.open_popup('Downloading mod')
+                    t = threading.Thread(target=download_search_mod_version)
+                    t.start()
+                    
+                if len(search_versions) and imgui.begin_popup_modal('Downloading mod', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
+                    if download_state == 2:
+                        imgui.close_current_popup()
+                        download_state = 0
+                    imgui.text('Downloading... (progress bar soon)')
+                    imgui.end_popup()
+
+                imgui.same_line()  
+                if imgui.button('Cancel'):
+                    search_selected = None
+            else:
+                search_selected = None
             imgui.end()
 
 helper.stop()
