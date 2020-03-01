@@ -43,8 +43,9 @@ class AddonFile:
     def __repr__(self):
         return f'AddonFile({self.name!r})'
 
-    def download(self, path: str='') -> str:
-        path = os.path.join(path, self.file_name)
+    def download(self, path: str='', add_file_name: bool=True) -> str:
+        if add_file_name:
+            path = os.path.join(path, self.file_name)
         with requests.get(self.url, headers=TWITCH_HEADERS, stream=True) as r:
             r.raise_for_status()
             with open(path, 'wb') as file:
