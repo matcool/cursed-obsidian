@@ -139,9 +139,18 @@ while helper.loop():
                         imgui.end_menu()
                     imgui.end_menu_bar()
                 for i, mod in enumerate(data['mods']):
-                    # would be nice to do this some other way (to include an image in the future)
-                    # instead of putting it in a selectable
-                    if imgui.selectable(f'{mod["name"]}\n{mod["summary"]}')[0]:
+                    # oh god this is a hardcoded numbers mess
+                    imgui.set_cursor_pos((5, i * 40 + 27))
+
+                    imgui.begin_group()
+                    
+                    imgui.text(mod['name'])
+                    imgui.text_colored(mod['summary'], 0.82, 0.82, 0.82)
+                    
+                    imgui.end_group()
+                    
+                    imgui.set_cursor_pos((5, i * 40 + 24))
+                    if imgui.selectable(f'##0n{i}', width=imgui.get_window_width() - 10, height=35)[0]:
                         imgui.set_next_window_focus()
                         selected_mod = i
                         selected_mod_files = []
