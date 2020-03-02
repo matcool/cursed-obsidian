@@ -114,6 +114,13 @@ def download_search_mod_version():
 while helper.loop():
     with helper:
         if imgui.begin_main_menu_bar():
+            if imgui.menu_item('New')[0]:
+                data_path = easygui.filesavebox(msg='Create obsidian.json', default='obsidian.json', filetypes=['*.json'])
+                if data_path:
+                    data = {'mods':[]}
+                    with open(data_path, 'w') as file:
+                        json.dump(data, file)
+                    folder = os.path.dirname(data_path)
             if imgui.menu_item('Open')[0]:
                 data_path = easygui.fileopenbox(msg='Open obsidian.json', default='*.json', filetypes=['*.json'])
                 if data_path:
