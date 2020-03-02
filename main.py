@@ -29,6 +29,21 @@ def button_disable_color(condition: bool=True):
             imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, 0.3, 0.3, 0.3)
         _button_disabled = not _button_disabled
 
+def get_versions(addon: Addon, sort: bool=True) -> Tuple[AddonFile]:
+    files = addon.get_files()
+    if sort:
+        files = tuple(reversed(sorted(files, key=lambda af: date_parse(af.date))))
+    return files
+
+def download_func(use_done: bool=False, var_name: str='download_state'):
+    def decorator(func):
+        def wrapper(cls, *args, **kwargs):
+            setattr(cls, var_name, DLState.DOWNLOADING)
+            func(cls, *args, **kwargs)
+            setattr(cls, var_name, DLState.DONE if use_done else DLState.IDLE)
+        return wrapper
+    return decorator
+
 class DLState(Enum):
     IDLE = 0
     DOWNLOADING = 1
@@ -43,26 +58,19 @@ class EditModW:
     download_state: DLState = DLState.IDLE
 
     @classmethod
+    @download_func()
     def get_versions(cls):
-        cls.download_state = DLState.DOWNLOADING
-    
-        project_id = cls.current_mod['id']
-        file_id = cls.current_mod['file_id']
-        addon = Addon.from_id(project_id)
-        
-        cls.versions = tuple(reversed(sorted(addon.get_files(), key=lambda af: date_parse(af.date))))
+        cls.versions = get_versions(Addon.from_id(cls.current_mod['id']))
+
         cls.selected = 0
         for i, af in enumerate(cls.versions):
-            if af.id == file_id:
+            if af.id == cls.current_mod['file_id']:
                 cls.selected = i
                 break
 
-        cls.download_state = DLState.IDLE
-
     @classmethod
+    @download_func(use_done=True)
     def download_version(cls):
-        cls.download_state = DLState.DOWNLOADING
-        
         af: AddonFile = cls.versions[cls.selected]
         af.download(folder)
         
@@ -76,8 +84,6 @@ class EditModW:
             'file_name': af.file_name
         })
         save_data()
-        
-        cls.download_state = DLState.DONE
     
     @classmethod
     def render(cls):
