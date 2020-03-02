@@ -30,9 +30,10 @@ def button_disable_color(condition: bool=True):
 selected_mod = None
 selected_mod_files = []
 selected_mod_file = 0
-
+selected_versions_state = 0
 def edit_mod_get_versions():
-    global selected_mod_files, selected_mod_file
+    global selected_mod_files, selected_mod_file, selected_versions_state
+    selected_versions_state = 1
     
     project_id = data['mods'][selected_mod]['id']
     file_id = data['mods'][selected_mod]['file_id']
@@ -44,6 +45,7 @@ def edit_mod_get_versions():
         if af.id == file_id:
             selected_mod_file = i
             break
+    selected_versions_state = 0
 
 download_state = 0 # 0 - nothing, 1 - downloading, 2 - done
 def download_selected_mod_version():
@@ -67,7 +69,7 @@ def download_selected_mod_version():
     download_state = 2
 
 search_str = None
-search_state = 0 # same as download_state
+search_state = 0 # 0 - nothing, 1 - downloading
 search_results = []
 search_selected = None
 search_versions = []
@@ -149,11 +151,20 @@ while helper.loop():
                 current = data['mods'][selected_mod]
                 _, opened = imgui.begin('Edit mod', closable=True)
                 if opened:
-                    imgui.text_colored(current['name'], 1, 1, 0)
+                    imgui.text_colored(current['name'], 1, 1, 1)
+                    imgui.text_colored(current['summary'], 0.82, 0.82, 0.82)
+
+                    imgui.separator()
+
                     _, selected_mod_file = imgui.combo('Select version', selected_mod_file, [af.name for af in selected_mod_files])
-                    if imgui.button('Get versions'):
+                    
+                    disabled = selected_versions_state == 1
+                    
+                    button_disable_color(disabled)
+                    if imgui.button('Get versions') and not disabled:
                         t = threading.Thread(target=edit_mod_get_versions)
                         t.start()
+                    button_disable_color(disabled)
 
 
                     imgui.set_cursor_pos((0, imgui.get_window_height() - 32))
@@ -166,8 +177,18 @@ while helper.loop():
                         if download_state == 2:
                             imgui.close_current_popup()
                             download_state = 0
-                        imgui.text(f'This will delete your current jar file ({current["file_name"]}) ')
-                        imgui.text(f'and replace it with the version you just selected ({selected_mod_files[selected_mod_file].name})')
+                        imgui.begin_group()
+                        imgui.text('This will replace: ')
+                        imgui.text('with the version: ')
+                        imgui.end_group()
+
+                        imgui.same_line()
+
+                        imgui.begin_group()
+                        imgui.text_colored(data['mods'][selected_mod]['version_name'], 1.0, 0.4, 0.4)
+                        imgui.text_colored(selected_mod_files[selected_mod_file].name, 0.4, 1.0, 0.4)
+                        imgui.end_group()
+                        
                         imgui.separator()
                         disable = download_state != 0
                         button_disable_color(disable)
@@ -221,6 +242,12 @@ while helper.loop():
         if search_selected is not None:
             _, opened = imgui.begin('Add mod', closable=True)
             if opened:
+                mod = search_results[search_selected]
+                imgui.text_colored(mod.name, 1, 1, 1)
+                imgui.text_colored(mod.summary, 0.82, 0.82, 0.82)
+
+                imgui.separator()
+
                 _, search_version_selected = imgui.combo('Select version', search_version_selected, [af.name for af in search_versions])
                 disable = search_versions_state == 1
                 button_disable_color(disable)
