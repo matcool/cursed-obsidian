@@ -51,11 +51,55 @@ class DLState(Enum):
 
 # Windows
 
+class MainW:
+    @classmethod
+    def render(cls):
+        imgui.begin('Main', flags=imgui.WINDOW_MENU_BAR | imgui.WINDOW_NO_TITLE_BAR)
+
+        if imgui.begin_menu_bar():
+            if imgui.begin_menu('Add mod'):
+                if imgui.menu_item('Search')[0]:
+                    SearchModW.init()
+                imgui.end_menu()
+            imgui.end_menu_bar()
+
+        for i, mod in enumerate(data['mods']):
+            # oh god this is a hardcoded numbers mess
+            imgui.set_cursor_pos((8, i * 40 + 27))
+
+            imgui.begin_group()
+            
+            imgui.text(mod['name'])
+            imgui.text_colored(mod['summary'], 0.82, 0.82, 0.82)
+            
+            imgui.end_group()
+
+            version_name = mod['version_name']
+            imgui.set_cursor_pos((imgui.get_window_width() - len(version_name) * 7 - 8, i * 40 + 27))
+            imgui.text_colored(version_name, 0.5, 0.5, 0.5)
+            
+            imgui.set_cursor_pos((8, i * 40 + 24))
+            if imgui.selectable(f'##0n{i}', width=imgui.get_window_width() - 10, height=35)[0]:
+                imgui.set_next_window_focus()
+                EditModW.init(i)
+        
+        imgui.end()
+
 class EditModW:
     current_mod: Optional[dict] = None
-    versions: Optional[Tuple[AddonFile]] = tuple()
+    versions: Tuple[AddonFile] = tuple()
     selected: int = 0
     download_state: DLState = DLState.IDLE
+
+    @classmethod
+    def init(cls, mod_index: int):
+        cls.current_mod = data['mods'][mod_index]
+
+    @classmethod
+    def disable(cls):
+        cls.current_mod = None
+        cls.versions = tuple()
+        cls.selected = 0
 
     @classmethod
     @download_func()
@@ -111,10 +155,10 @@ class EditModW:
             imgui.set_cursor_pos((0, imgui.get_window_height() - 32))
             imgui.separator()
 
-            if imgui.button('OK') and len(cls.versions):
+            if imgui.button('OK') and cls.versions:
                 imgui.open_popup('Update mod?')
             
-            if len(cls.versions) and imgui.begin_popup_modal('Update mod?', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
+            if cls.versions and imgui.begin_popup_modal('Update mod?', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
                 if cls.download_state == DLState.DONE:
                     imgui.close_current_popup()
                     cls.download_state = DLState.IDLE
@@ -134,8 +178,7 @@ class EditModW:
                 disable = cls.download_state != DLState.IDLE
                 button_disable_color(disable)
                 if imgui.button('OK', width=imgui.get_content_region_available_width() / 2 - imgui.STYLE_FRAME_PADDING) and not disable:
-                    t = threading.Thread(target=cls.download_version)
-                    t.start()
+                    threading.Thread(target=cls.download_version).start()
                 imgui.set_item_default_focus()
                 imgui.same_line()
                 if imgui.button('Cancel', width=imgui.get_content_region_available_width()) and not disable:
@@ -150,60 +193,128 @@ class EditModW:
             cls.disable()
         imgui.end()
 
+class SearchModW:
+    download_state: DLState = DLState.IDLE
+    
+    query: Optional[str] = None
+    results: Tuple[Addon] = tuple()
+
     @classmethod
-    def init(cls, mod_index: int):
-        cls.current_mod = data['mods'][mod_index]
+    def init(cls):
+        cls.query = ''
 
     @classmethod
     def disable(cls):
-        cls.current_mod = None
+        cls.query = None
+        cls.results = tuple()
+
+    @classmethod
+    @download_func()
+    def search_mods(cls):
+        cls.results = Addon.search_addon(cls.query)
+
+    @classmethod
+    def render(cls):
+        if cls.query is None: return
+
+        if imgui.begin('Search', closable=True)[1]:
+            _, cls.query = imgui.input_text('##0n', cls.query, 256)
+            imgui.same_line()
+
+            disabled = cls.download_state == DLState.DOWNLOADING
+            button_disable_color(disabled)
+            if imgui.button('Search') and not disabled:
+                threading.Thread(target=cls.search_mods).start()
+            button_disable_color(disabled)
+            
+            if imgui.begin_child('search_results', border=True) and cls.results:
+                for i, result in enumerate(cls.results):
+                    if imgui.selectable(f'{result.name}\n{result.summary}')[0]:
+                        imgui.set_next_window_focus()
+                        AddModW.init(result)
+            imgui.end_child()
+        else:
+            cls.disable()
+        imgui.end()
+
+class AddModW:
+    download_state: DLState = DLState.IDLE
+
+    mod: Optional[Addon] = None
+    versions: Tuple[AddonFile] = tuple()
+    selected: int = 0
+
+    @classmethod
+    def init(cls, mod: Addon):
+        cls.mod = mod
+    
+    @classmethod
+    def disable(cls):
+        cls.mod = None
         cls.versions = tuple()
         cls.selected = 0
 
-search_str = None
-search_state = 0 # 0 - nothing, 1 - downloading
-search_results = []
-search_selected = None
-search_versions = []
-search_version_selected = 0
-def search_for_mod():
-    global search_state, search_results, search_selected
-    search_state = 1
-    search_results = []
-    search_results = Addon.search_addon(search_str)
-    search_selected = None
-    search_state = 0
+    @classmethod
+    @download_func()
+    def get_versions(cls):
+        cls.versions = get_versions(cls.mod)
 
-search_versions_state = 0
-def search_get_versions():
-    global search_versions, search_versions_state
-    search_versions_state = 1
+    @classmethod
+    @download_func(use_done=True)
+    def download_version(cls):
+        af: AddonFile = cls.versions[cls.selected]
+        af.download(folder)
+        
+        data['mods'].append({
+            'name': cls.mod.name,
+            'id': cls.mod.id,
+            'url': cls.mod.url,
+            'version_name': af.name,
+            'file_name': af.file_name,
+            'file_id': af.id,
+            'icon': cls.mod.picture,
+            'summary': cls.mod.summary
+        })
+        save_data()
 
-    addon = search_results[search_selected]
-    search_versions = tuple(reversed(sorted(addon.get_files(), key=lambda af: date_parse(af.date))))
-    
-    search_versions_state = 0
+    @classmethod
+    def render(cls):
+        if cls.mod is None: return
 
-def download_search_mod_version():
-    global download_state
-    download_state = 1
-    mod = search_results[search_selected]
-    
-    af: AddonFile = search_versions[search_version_selected]
-    af.download(folder)
-    
-    data['mods'].append({
-        'name': mod.name,
-        'id': mod.id,
-        'url': mod.url,
-        'version_name': af.name,
-        'file_name': af.file_name,
-        'file_id': af.id,
-        'icon': mod.picture,
-        'summary': mod.summary
-    })
-    save_data()
-    download_state = 2
+        if imgui.begin('Add mod', closable=True)[1]:
+            imgui.text_colored(cls.mod.name, 1, 1, 1)
+            imgui.push_text_wrap_pos(imgui.get_window_width())
+            imgui.text_colored(cls.mod.summary, 0.82, 0.82, 0.82)
+            imgui.pop_text_wrap_pos()
+            imgui.separator()
+
+            _, cls.selected = imgui.combo('Select version', cls.selected, [af.name for af in cls.versions])
+            disabled = cls.download_state == DLState.DOWNLOADING
+            button_disable_color(disabled)
+            if imgui.button('Get versions') and not disabled:
+                threading.Thread(target=cls.get_versions).start()
+            button_disable_color(disabled)
+
+            imgui.set_cursor_pos((0, imgui.get_window_height() - 32))
+            imgui.separator()
+
+            if imgui.button('Add'):
+                imgui.open_popup('Downloading mod')
+                threading.Thread(target=cls.download_version).start()
+                
+            if cls.versions and imgui.begin_popup_modal('Downloading mod', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
+                if cls.download_state == DLState.DONE:
+                    imgui.close_current_popup()
+                    cls.download_state = DLState.IDLE
+                imgui.text('Downloading... (progress bar soon)')
+                imgui.end_popup()
+
+            imgui.same_line()  
+            if imgui.button('Cancel'):
+                cls.disable()
+        else:
+            cls.disable()
+        imgui.end()
 
 
 while helper.loop():
@@ -223,100 +334,11 @@ while helper.loop():
                         data = json.load(file)
                     folder = os.path.dirname(data_path)
             imgui.end_main_menu_bar()
+
         if data is not None:
-            if imgui.begin('Main', flags=imgui.WINDOW_MENU_BAR | imgui.WINDOW_NO_TITLE_BAR):
-                if imgui.begin_menu_bar():
-                    if imgui.begin_menu('Add mod'):
-                        if imgui.menu_item('Search')[0]:
-                            search_str = ''
-                        imgui.end_menu()
-                    imgui.end_menu_bar()
-                for i, mod in enumerate(data['mods']):
-                    # oh god this is a hardcoded numbers mess
-                    imgui.set_cursor_pos((8, i * 40 + 27))
-
-                    imgui.begin_group()
-                    
-                    imgui.text(mod['name'])
-                    imgui.text_colored(mod['summary'], 0.82, 0.82, 0.82)
-                    
-                    imgui.end_group()
-
-                    version_name = mod['version_name']
-                    imgui.set_cursor_pos((imgui.get_window_width() - len(version_name) * 7 - 8, i * 40 + 27))
-                    imgui.text_colored(version_name, 0.5, 0.5, 0.5)
-                    
-                    imgui.set_cursor_pos((8, i * 40 + 24))
-                    if imgui.selectable(f'##0n{i}', width=imgui.get_window_width() - 10, height=35)[0]:
-                        imgui.set_next_window_focus()
-                        EditModW.init(i)
-            imgui.end()
-            # Edit mod window
+            MainW.render()
             EditModW.render()
-        # Search mod window
-        if search_str is not None:
-            _, opened = imgui.begin('Search', closable=True)
-            if opened:
-                _, search_str = imgui.input_text('##0n', search_str, 256)
-                imgui.same_line()
-                disable = search_state == 1
-                button_disable_color(disable)
-                if imgui.button('Search') and not disable:
-                    t = threading.Thread(target=search_for_mod)
-                    t.start()
-                button_disable_color(disable)
-                if imgui.begin_child('search_results', border=True) and len(search_results):
-                    for i, result in enumerate(search_results):
-                        if imgui.selectable(f'{result.name}\n{result.summary}')[0]:
-                            imgui.set_next_window_focus()
-                            search_selected = i
-                            search_versions = []
-                            search_version_selected = 0
-                imgui.end_child()
-            else:
-                search_str = None
-                search_results = []
-                search_selected = None
-            imgui.end()
-        # search mod specific window
-        if search_selected is not None:
-            _, opened = imgui.begin('Add mod', closable=True)
-            if opened:
-                mod = search_results[search_selected]
-                imgui.text_colored(mod.name, 1, 1, 1)
-                imgui.push_text_wrap_pos(imgui.get_window_width())
-                imgui.text_colored(mod.summary, 0.82, 0.82, 0.82)
-                imgui.pop_text_wrap_pos()
-                imgui.separator()
-
-                _, search_version_selected = imgui.combo('Select version', search_version_selected, [af.name for af in search_versions])
-                disable = search_versions_state == 1
-                button_disable_color(disable)
-                if imgui.button('Get versions') and not disable:
-                    t = threading.Thread(target=search_get_versions)
-                    t.start()
-                button_disable_color(disable)
-
-                imgui.set_cursor_pos((0, imgui.get_window_height() - 32))
-                imgui.separator()
-
-                if imgui.button('Add'):
-                    imgui.open_popup('Downloading mod')
-                    t = threading.Thread(target=download_search_mod_version)
-                    t.start()
-                    
-                if len(search_versions) and imgui.begin_popup_modal('Downloading mod', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
-                    if download_state == 2:
-                        imgui.close_current_popup()
-                        download_state = 0
-                    imgui.text('Downloading... (progress bar soon)')
-                    imgui.end_popup()
-
-                imgui.same_line()  
-                if imgui.button('Cancel'):
-                    search_selected = None
-            else:
-                search_selected = None
-            imgui.end()
+            SearchModW.render()
+            AddModW.render()
 
 helper.stop()
