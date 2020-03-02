@@ -5,6 +5,8 @@ import os
 import easygui
 from glfw_helper import Helper, imgui
 import threading
+from enum import Enum
+from typing import Optional, Tuple
 
 helper = Helper('Cursed Obsidian', 800, 600, bg=(0.2, 0.2, 0.2))
 
@@ -27,46 +29,130 @@ def button_disable_color(condition: bool=True):
             imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, 0.3, 0.3, 0.3)
         _button_disabled = not _button_disabled
 
-selected_mod = None
-selected_mod_files = []
-selected_mod_file = 0
-selected_versions_state = 0
-def edit_mod_get_versions():
-    global selected_mod_files, selected_mod_file, selected_versions_state
-    selected_versions_state = 1
-    
-    project_id = data['mods'][selected_mod]['id']
-    file_id = data['mods'][selected_mod]['file_id']
-    addon = Addon.from_id(project_id)
-    
-    selected_mod_files = tuple(reversed(sorted(addon.get_files(), key=lambda af: date_parse(af.date))))
-    selected_mod_file = None
-    for i, af in enumerate(selected_mod_files):
-        if af.id == file_id:
-            selected_mod_file = i
-            break
-    selected_versions_state = 0
+class DLState(Enum):
+    IDLE = 0
+    DOWNLOADING = 1
+    DONE = 2 # not used sometimes
 
-download_state = 0 # 0 - nothing, 1 - downloading, 2 - done
-def download_selected_mod_version():
-    global download_state
-    download_state = 1
-    current_mod = data['mods'][selected_mod]
+# Windows
+
+class EditModW:
+    current_mod: Optional[dict] = None
+    versions: Optional[Tuple[AddonFile]] = tuple()
+    selected: int = 0
+    download_state: DLState = DLState.IDLE
+
+    @classmethod
+    def get_versions(cls):
+        cls.download_state = DLState.DOWNLOADING
     
-    af: AddonFile = selected_mod_files[selected_mod_file]
-    af.download(folder)
+        project_id = cls.current_mod['id']
+        file_id = cls.current_mod['file_id']
+        addon = Addon.from_id(project_id)
+        
+        cls.versions = tuple(reversed(sorted(addon.get_files(), key=lambda af: date_parse(af.date))))
+        cls.selected = 0
+        for i, af in enumerate(cls.versions):
+            if af.id == file_id:
+                cls.selected = i
+                break
+
+        cls.download_state = DLState.IDLE
+
+    @classmethod
+    def download_version(cls):
+        cls.download_state = DLState.DOWNLOADING
+        
+        af: AddonFile = cls.versions[cls.selected]
+        af.download(folder)
+        
+        old_path = os.path.join(folder, cls.current_mod['file_name'])
+        if os.path.isfile(old_path): # just in case
+            os.remove(old_path)
+        
+        cls.current_mod.update({
+            'version_name': af.name,
+            'file_id': af.id,
+            'file_name': af.file_name
+        })
+        save_data()
+        
+        cls.download_state = DLState.DONE
     
-    old_path = os.path.join(folder, current_mod['file_name'])
-    if os.path.isfile(old_path): # just in case
-        os.remove(old_path)
-    
-    current_mod.update({
-        'version_name': af.name,
-        'file_id': af.id,
-        'file_name': af.file_name
-    })
-    save_data()
-    download_state = 2
+    @classmethod
+    def render(cls):
+        if cls.current_mod is None: return
+
+        if imgui.begin('Edit mod', closable=True)[1]:
+            imgui.text_colored(cls.current_mod['name'], 1, 1, 1)
+            
+            imgui.push_text_wrap_pos(imgui.get_window_width())
+            imgui.text_colored(cls.current_mod['summary'], 0.82, 0.82, 0.82)
+            imgui.pop_text_wrap_pos()
+
+            imgui.separator()
+
+            _, cls.selected = imgui.combo('Select version', cls.selected, [af.name for af in cls.versions])
+            
+            disabled = cls.download_state == DLState.DOWNLOADING
+            
+            button_disable_color(disabled)
+            if imgui.button('Get versions') and not disabled:
+                t = threading.Thread(target=cls.get_versions)
+                t.start()
+            button_disable_color(disabled)
+
+            imgui.set_cursor_pos((0, imgui.get_window_height() - 32))
+            imgui.separator()
+
+            if imgui.button('OK') and len(cls.versions):
+                imgui.open_popup('Update mod?')
+            
+            if len(cls.versions) and imgui.begin_popup_modal('Update mod?', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
+                if cls.download_state == DLState.DONE:
+                    imgui.close_current_popup()
+                    cls.download_state = DLState.IDLE
+                imgui.begin_group()
+                imgui.text('This will replace: ')
+                imgui.text('with the version: ')
+                imgui.end_group()
+
+                imgui.same_line()
+
+                imgui.begin_group()
+                imgui.text_colored(cls.current_mod['version_name'], 1.0, 0.4, 0.4)
+                imgui.text_colored(cls.versions[cls.selected].name, 0.4, 1.0, 0.4)
+                imgui.end_group()
+                
+                imgui.separator()
+                disable = cls.download_state != DLState.IDLE
+                button_disable_color(disable)
+                if imgui.button('OK', width=imgui.get_content_region_available_width() / 2 - imgui.STYLE_FRAME_PADDING) and not disable:
+                    t = threading.Thread(target=cls.download_version)
+                    t.start()
+                imgui.set_item_default_focus()
+                imgui.same_line()
+                if imgui.button('Cancel', width=imgui.get_content_region_available_width()) and not disable:
+                    imgui.close_current_popup()
+                button_disable_color(disable)
+                imgui.end_popup()
+            imgui.same_line()
+            
+            if imgui.button('Cancel'):
+                cls.disable()
+        else:
+            cls.disable()
+        imgui.end()
+
+    @classmethod
+    def init(cls, mod_index: int):
+        cls.current_mod = data['mods'][mod_index]
+
+    @classmethod
+    def disable(cls):
+        cls.current_mod = None
+        cls.versions = tuple()
+        cls.selected = 0
 
 search_str = None
 search_state = 0 # 0 - nothing, 1 - downloading
@@ -157,79 +243,10 @@ while helper.loop():
                     imgui.set_cursor_pos((8, i * 40 + 24))
                     if imgui.selectable(f'##0n{i}', width=imgui.get_window_width() - 10, height=35)[0]:
                         imgui.set_next_window_focus()
-                        selected_mod = i
-                        selected_mod_files = []
-                        selected_mod_file = 0
+                        EditModW.init(i)
             imgui.end()
             # Edit mod window
-            if selected_mod is not None:
-                current = data['mods'][selected_mod]
-                _, opened = imgui.begin('Edit mod', closable=True)
-                if opened:
-                    imgui.text_colored(current['name'], 1, 1, 1)
-                    
-                    imgui.push_text_wrap_pos(imgui.get_window_width())
-                    imgui.text_colored(current['summary'], 0.82, 0.82, 0.82)
-                    imgui.pop_text_wrap_pos()
-
-                    imgui.separator()
-
-                    _, selected_mod_file = imgui.combo('Select version', selected_mod_file, [af.name for af in selected_mod_files])
-                    
-                    disabled = selected_versions_state == 1
-                    
-                    button_disable_color(disabled)
-                    if imgui.button('Get versions') and not disabled:
-                        t = threading.Thread(target=edit_mod_get_versions)
-                        t.start()
-                    button_disable_color(disabled)
-
-
-                    imgui.set_cursor_pos((0, imgui.get_window_height() - 32))
-                    imgui.separator()
-
-                    if imgui.button('OK') and len(selected_mod_files):
-                        imgui.open_popup('Update mod?')
-                    
-                    if len(selected_mod_files) and imgui.begin_popup_modal('Update mod?', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
-                        if download_state == 2:
-                            imgui.close_current_popup()
-                            download_state = 0
-                        imgui.begin_group()
-                        imgui.text('This will replace: ')
-                        imgui.text('with the version: ')
-                        imgui.end_group()
-
-                        imgui.same_line()
-
-                        imgui.begin_group()
-                        imgui.text_colored(data['mods'][selected_mod]['version_name'], 1.0, 0.4, 0.4)
-                        imgui.text_colored(selected_mod_files[selected_mod_file].name, 0.4, 1.0, 0.4)
-                        imgui.end_group()
-                        
-                        imgui.separator()
-                        disable = download_state != 0
-                        button_disable_color(disable)
-                        if imgui.button('OK', width=imgui.get_content_region_available_width() / 2 - imgui.STYLE_FRAME_PADDING) and not disable:
-                            t = threading.Thread(target=download_selected_mod_version)
-                            t.start()
-                        imgui.set_item_default_focus()
-                        imgui.same_line()
-                        if imgui.button('Cancel', width=imgui.get_content_region_available_width()) and not disable:
-                            imgui.close_current_popup()
-                        button_disable_color(disable)
-                        imgui.end_popup()
-                    imgui.same_line()
-                    
-                    if imgui.button('Cancel'):
-                        selected_mod = None
-                        selected_mod_files = []
-                        selected_mod_file = 0
-                else:
-                    selected_mod = None
-                    selected_mod_files = []
-                    selected_mod_file = 0
-                imgui.end()
+            EditModW.render()
         # Search mod window
         if search_str is not None:
             _, opened = imgui.begin('Search', closable=True)
