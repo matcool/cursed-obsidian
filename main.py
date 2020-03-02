@@ -113,6 +113,7 @@ def download_search_mod_version():
     save_data()
     download_state = 2
 
+
 while helper.loop():
     with helper:
         if imgui.begin_main_menu_bar():
@@ -140,7 +141,7 @@ while helper.loop():
                     imgui.end_menu_bar()
                 for i, mod in enumerate(data['mods']):
                     # oh god this is a hardcoded numbers mess
-                    imgui.set_cursor_pos((5, i * 40 + 27))
+                    imgui.set_cursor_pos((8, i * 40 + 27))
 
                     imgui.begin_group()
                     
@@ -148,20 +149,28 @@ while helper.loop():
                     imgui.text_colored(mod['summary'], 0.82, 0.82, 0.82)
                     
                     imgui.end_group()
+
+                    version_name = mod['version_name']
+                    imgui.set_cursor_pos((imgui.get_window_width() - len(version_name) * 7 - 8, i * 40 + 27))
+                    imgui.text_colored(version_name, 0.5, 0.5, 0.5)
                     
-                    imgui.set_cursor_pos((5, i * 40 + 24))
+                    imgui.set_cursor_pos((8, i * 40 + 24))
                     if imgui.selectable(f'##0n{i}', width=imgui.get_window_width() - 10, height=35)[0]:
                         imgui.set_next_window_focus()
                         selected_mod = i
                         selected_mod_files = []
                         selected_mod_file = 0
+            imgui.end()
             # Edit mod window
             if selected_mod is not None:
                 current = data['mods'][selected_mod]
                 _, opened = imgui.begin('Edit mod', closable=True)
                 if opened:
                     imgui.text_colored(current['name'], 1, 1, 1)
+                    
+                    imgui.push_text_wrap_pos(imgui.get_window_width())
                     imgui.text_colored(current['summary'], 0.82, 0.82, 0.82)
+                    imgui.pop_text_wrap_pos()
 
                     imgui.separator()
 
@@ -221,12 +230,11 @@ while helper.loop():
                     selected_mod_files = []
                     selected_mod_file = 0
                 imgui.end()
-            imgui.end()
         # Search mod window
         if search_str is not None:
             _, opened = imgui.begin('Search', closable=True)
             if opened:
-                _, search_str = imgui.input_text('', search_str, 256)
+                _, search_str = imgui.input_text('##0n', search_str, 256)
                 imgui.same_line()
                 disable = search_state == 1
                 button_disable_color(disable)
@@ -253,8 +261,9 @@ while helper.loop():
             if opened:
                 mod = search_results[search_selected]
                 imgui.text_colored(mod.name, 1, 1, 1)
+                imgui.push_text_wrap_pos(imgui.get_window_width())
                 imgui.text_colored(mod.summary, 0.82, 0.82, 0.82)
-
+                imgui.pop_text_wrap_pos()
                 imgui.separator()
 
                 _, search_version_selected = imgui.combo('Select version', search_version_selected, [af.name for af in search_versions])
