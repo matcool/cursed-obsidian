@@ -61,9 +61,9 @@ class Addon:
         self.url = data['websiteUrl']
         self.summary = data['summary']
         self.downloads = int(data['downloadCount'])
-        self.picture = None
+        self.icon = None
         for att in data['attachments']:
-            if att['isDefault']: self.picture = att['url'] 
+            if att['isDefault']: self.icon = att['url'] 
 
     @classmethod
     def from_id(cls, id: int):

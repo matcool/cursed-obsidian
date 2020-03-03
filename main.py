@@ -272,7 +272,7 @@ class AddModW:
             'version_name': af.name,
             'file_name': af.file_name,
             'file_id': af.id,
-            'icon': cls.mod.picture,
+            'icon': cls.mod.icon,
             'summary': cls.mod.summary
         })
         save_data()
