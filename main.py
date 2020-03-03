@@ -7,11 +7,14 @@ from glfw_helper import Helper, imgui
 import threading
 from enum import Enum
 from typing import Optional, Tuple
+import textwrap
 
 helper = Helper('Cursed Obsidian', 800, 600, bg=(0.2, 0.2, 0.2))
 
 data = None
 folder = None
+
+# Utils
 
 def save_data():
     with open(os.path.join(folder, 'obsidian.json'), 'w') as file:
@@ -49,6 +52,56 @@ class DLState(Enum):
     DOWNLOADING = 1
     DONE = 2 # not used sometimes
 
+class MultiButton:
+    """
+    Wraps an Selectable across multiple widgets
+
+    Usage:
+    ```py
+    button = MultiButton()
+    with button:
+        imgui.text('Hello')
+        imgui.text('World')
+    if button:
+        print('Pressed')
+    ```
+    """
+    def __init__(self, id=''):
+        self.start_pos = None
+        self.value = None
+        self.id = id
+
+    def __enter__(self):
+        self.start_pos = imgui.get_cursor_pos()
+    
+    def __exit__(self, *args):
+        end_pos = imgui.get_cursor_pos()
+        imgui.set_cursor_pos((8, self.start_pos[1]))
+        self.value = imgui.selectable(f'##0n{self.id}', width=imgui.get_window_width() - 10, height=end_pos[1] - self.start_pos[1] - 4)
+        imgui.set_cursor_pos(end_pos)
+
+    def __bool__(self):
+        return self.value[0]
+
+class EasyContext:
+    def __init__(self, enter, exit):
+        self.enter = enter
+        self.exit = exit
+    def __enter__(self):
+        return self.enter()
+    def __exit__(self, *_):
+        return self.exit()
+
+def revert_cursor():
+    start = None
+    def enter():
+        nonlocal start
+        start = imgui.get_cursor_pos()
+        return start
+    def _exit():
+        imgui.set_cursor_pos(start)
+    return EasyContext(enter, _exit)
+
 # Windows
 
 class MainW:
@@ -64,22 +117,22 @@ class MainW:
             imgui.end_menu_bar()
 
         for i, mod in enumerate(data['mods']):
-            # oh god this is a hardcoded numbers mess
-            imgui.set_cursor_pos((8, i * 40 + 27))
+            button = MultiButton(i)
+            with button:
+                imgui.begin_group()
+                
+                top_y = imgui.get_cursor_pos()[1]
+                imgui.text(mod['name'])
+                imgui.text_colored(textwrap.shorten(mod['summary'], width=70), 0.82, 0.82, 0.82)
+                
+                imgui.end_group()
 
-            imgui.begin_group()
-            
-            imgui.text(mod['name'])
-            imgui.text_colored(mod['summary'], 0.82, 0.82, 0.82)
-            
-            imgui.end_group()
+                with revert_cursor():
+                    version_name = mod['version_name']
+                    imgui.set_cursor_pos((imgui.get_window_width() - len(version_name) * 7 - 8, top_y))
+                    imgui.text_colored(version_name, 0.5, 0.5, 0.5)
 
-            version_name = mod['version_name']
-            imgui.set_cursor_pos((imgui.get_window_width() - len(version_name) * 7 - 8, i * 40 + 27))
-            imgui.text_colored(version_name, 0.5, 0.5, 0.5)
-            
-            imgui.set_cursor_pos((8, i * 40 + 24))
-            if imgui.selectable(f'##0n{i}', width=imgui.get_window_width() - 10, height=35)[0]:
+            if button:
                 imgui.set_next_window_focus()
                 EditModW.init(i)
         
@@ -229,7 +282,15 @@ class SearchModW:
             
             if imgui.begin_child('search_results', border=True) and cls.results:
                 for i, result in enumerate(cls.results):
-                    if imgui.selectable(f'{result.name}\n{result.summary}')[0]:
+                    button = MultiButton(i)
+                    with button:
+                        imgui.begin_group()
+
+                        imgui.text(result.name)
+                        imgui.text_colored(textwrap.shorten(result.summary, width=70), 0.82, 0.82, 0.82)
+
+                        imgui.end_group()
+                    if button:
                         imgui.set_next_window_focus()
                         AddModW.init(result)
             imgui.end_child()
