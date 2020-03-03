@@ -242,6 +242,32 @@ class EditModW:
             
             if imgui.button('Cancel'):
                 cls.disable()
+
+            with revert_cursor() as current_pos:
+                imgui.set_cursor_pos((imgui.get_window_width() - 72, current_pos[1] - 23))
+                imgui.push_style_color(imgui.COLOR_BUTTON, 0.9, 0.3, 0.3)
+                imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, 0.9, 0.4, 0.4)
+                imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, 1.0, 0.3, 0.4)
+                if imgui.button('Remove', width=50):
+                    imgui.open_popup('Remove mod')
+                imgui.pop_style_color(3)
+
+            if imgui.begin_popup_modal('Remove mod', flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
+                imgui.text('Are you sure (this will also delete the .jar)')
+                imgui.separator()
+                if imgui.button('OK', width=imgui.get_content_region_available_width() / 2 - 20):
+                    path = os.path.join(folder, cls.current_mod['file_name'])
+                    if os.path.isfile(path): # just in case
+                        os.remove(path)
+                    data['mods'].remove(cls.current_mod)
+                    cls.current_mod = None
+
+                imgui.set_item_default_focus()
+                imgui.same_line()
+
+                if imgui.button('Cancel', width=imgui.get_content_region_available_width()):
+                    imgui.close_current_popup()
+                imgui.end_popup()
         else:
             cls.disable()
         imgui.end()
