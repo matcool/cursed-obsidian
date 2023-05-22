@@ -1,4 +1,4 @@
-requests==2.21.0
+requests==2.31.0
 imgui[glfw]==1.1.0
 easygui==0.98.1
 dateutils==0.6.7
